@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <SPI.h>
 #include <LiquidCrystal_I2C.h>
+#include <SPI.h>
 
 LiquidCrystal_I2C lcd(0x27,16,2);  
 
@@ -11,7 +12,6 @@ const char* LED2 = "OFF";
 const int P = 22;
 const int T = 25;
 const int H = 68;
-const int X = 42;
 
 
 
@@ -38,6 +38,11 @@ unsigned long previousMillis2 = 0;
 int buttonPressCount =0;
 
 
+#define    MPU9250_ADDRESS            0x68
+
+#define    BME_280_ADDRESS            0x76
+
+#define    GYRO_FULL_SCALE_2000_DPS   0x18
 
 
 void setup() {
@@ -59,6 +64,10 @@ void setup() {
   Serial.println("Dirección IP: ");
   Serial.println(WiFi.localIP());
   server.begin();
+
+  Wire.begin();
+  I2CwriteByte(MPU9250_ADDRESS, 27, GYRO_FULL_SCALE_2000_DPS);
+
   lcd.init();
   lcd.backlight();
   lcd.clear(); 
@@ -89,13 +98,17 @@ void loop() {
   lcd.setCursor(12, 1);               
   lcd.print("X:");     
   lcd.setCursor(14,1);
-  lcd.print(X);
-  delay(500);          
+  lcd.print(registers[9]);
+  delay(100);          
 
   server.begin();
   recibirTrama(); 
+  
   blinkLED1();
   blinkLED2();
+
+  
+  readMPU9250();
 }
 
 
@@ -177,6 +190,53 @@ void blinkLED2() {
   } 
 }
 }
+
+
+void I2Cread(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data)
+{
+  Wire.beginTransmission(Address);
+  Wire.write(Register);
+  Wire.endTransmission();
+
+  Wire.requestFrom(Address, Nbytes);
+  uint8_t index = 0;
+  while (Wire.available())
+    Data[index++] = Wire.read();
+}
+
+
+void I2CwriteByte(uint8_t Address, uint8_t Register, uint8_t Data)
+{
+  Wire.beginTransmission(Address);
+  Wire.write(Register);
+  Wire.write(Data);
+  Wire.endTransmission();
+}
+
+
+void readMPU9250() {
+  uint8_t Buf[14];
+  Wire.beginTransmission(Direccion_S2);
+  Wire.write(Acelerometro_Out);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)Direccion_S2, (uint8_t)14, true); // Request all 14 bytes
+  for (int i = 0; i < 14; i++) {
+    Buf[i] = Wire.read();
+  }
+  int16_t ax = (Buf[0] << 8) | Buf[1];  // Combine high and low bytes
+  int16_t ay = (Buf[2] << 8) | Buf[3];
+  int16_t az = (Buf[4] << 8) | Buf[5];
+  registers[6] = ax;
+  registers[7] = ay;
+  registers[8] = az;
+  int16_t gx = (Buf[8] << 8) | Buf[9];  // Combine high and low bytes
+  int16_t gy = (Buf[10] << 8) | Buf[11];
+  int16_t gz = (Buf[12] << 8) | Buf[13];
+  registers[9] = gx;
+  registers[10] = gy;
+  registers[11] = gz;
+}
+
 
 
 void processModbusData(char* buffer,WiFiClient &client){
