@@ -7,25 +7,13 @@
 LiquidCrystal_I2C lcd(0x27,16,2);  
 
 
-const char* LED1 = "OFF";
-const char* LED2 = "OFF";
-const int P = 22;
-const int T = 25;
-const int H = 68;
-
-
-
 float registers[12] = {0};
 const char* ssid = "iPhonedeSara";
 const char* password = "papijuancho";
 const int ledPin1 = 15;
 const int ledPin2 = 4;
-const int SSBME = 14;
-const int SSMPU = 13;
-const int pulsador= 27;
 WiFiServer server(502);
 unsigned long previousMillis[2] = {0,0};
-const uint8_t Direccion_S1 = 0x40;
 const uint8_t Direccion_S2 = 0x68; 
 const uint8_t Acelerometro = 0x1C;
 const uint8_t Giroscopio = 0x1B;
@@ -143,13 +131,11 @@ void blinkLED1() {
   // Si el valor del registro 0 es 1 y el valor del registro 2 es mayor que cero, realiza el parpadeo
   if (registers[0]==0){
     digitalWrite(ledPin1,LOW);
-    LED1= "OFF";
   }
   else{
     
     if (registers[0]==1 && registers[2]== 0) {
       digitalWrite(ledPin1,HIGH);
-      LED1= "ON ";
     }else{
       
       if (registers[0]==1 && registers[2]> 0){
@@ -177,13 +163,11 @@ void blinkLED2() {
   // Si el valor del registro 1 es 1 y el valor del registro 3 es mayor que cero, realiza el parpadeo
   if (registers[1]==0){
     digitalWrite(ledPin2,LOW);
-    LED2= "OFF";
   }
   else{
     
     if (registers[1]==1 && registers[3]== 0) {
       digitalWrite(ledPin2,HIGH);
-      LED2= "ON ";
     }else{
       
       if (registers[1]==1 && registers[3]> 0){
