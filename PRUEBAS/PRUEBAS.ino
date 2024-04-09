@@ -16,8 +16,8 @@ const int H = 68;
 
 
 float registers[12] = {0};
-const char* ssid = "Santiago2021";
-const char* password = "santiago2001";
+const char* ssid = "iPhonedeSara";
+const char* password = "papijuancho";
 const int ledPin1 = 15;
 const int ledPin2 = 4;
 const int SSBME = 14;
@@ -37,6 +37,10 @@ unsigned long previousMillis1 = 0;
 unsigned long previousMillis2 = 0;
 int buttonPressCount =0;
 
+#define BME_SCK 18   
+#define BME_MISO 19  
+#define BME_MOSI 23  
+#define BME_CS 5     
 
 #define    MPU9250_ADDRESS            0x68
 
@@ -48,6 +52,7 @@ int buttonPressCount =0;
 void setup() {
   pinMode(ledPin1, OUTPUT);
   pinMode(ledPin2, OUTPUT);
+
   Serial.begin(9600);
   Serial.print("Conectando a ");
   Serial.println(ssid);
@@ -68,6 +73,10 @@ void setup() {
   Wire.begin();
   I2CwriteByte(MPU9250_ADDRESS, 27, GYRO_FULL_SCALE_2000_DPS);
 
+  SPI.begin(); // Inicializar SPI
+  pinMode(BME_CS, OUTPUT);
+  digitalWrite(BME_CS, HIGH);
+
   lcd.init();
   lcd.backlight();
   lcd.clear(); 
@@ -75,31 +84,42 @@ void setup() {
 
 void loop() {
   lcd.setCursor(0, 0);               
-  lcd.print("LED1:");     
-  lcd.setCursor(5,0);
-  lcd.print(LED1);
-  lcd.setCursor(8, 0);               
-  lcd.print("LED2:");     
-  lcd.setCursor(13,0);
-  lcd.print(LED2);
+  lcd.print("L1:");     
+  lcd.setCursor(3,0);
+  lcd.print(int(registers[0]));
+  
+  // lcd.setCursor(5, 0);               
+  // lcd.print("L2:");     
+  // lcd.setCursor(8,0);
+  // lcd.print(int(registers[1]));
 
-  lcd.setCursor(0, 1);               
+  lcd.setCursor(10, 0);               
   lcd.print("P:");     
-  lcd.setCursor(2,1);
-  lcd.print(P);
-  lcd.setCursor(4, 1);               
-  lcd.print("T:");     
-  lcd.setCursor(6,1);
-  lcd.print(T);
-  lcd.setCursor(8, 1);               
-  lcd.print("H:");     
-  lcd.setCursor(10,1);
-  lcd.print(H);
-  lcd.setCursor(12, 1);               
-  lcd.print("X:");     
+  lcd.setCursor(12,0);
+  lcd.print(int(registers[9]));
+
+
+  lcd.setCursor(12, 1);              
+  lcd.print("T:");  
   lcd.setCursor(14,1);
-  lcd.print(registers[9]);
-  delay(100);          
+  lcd.print(int(registers[4]));
+
+  lcd.setCursor(5, 0);               
+  lcd.print("H:");     
+  lcd.setCursor(7,0);
+  lcd.print(int(registers[5]));
+             
+  lcd.setCursor(6, 1);   
+  lcd.print("Y:");        
+  lcd.setCursor(8,1);
+  lcd.print(int(registers[7]));
+  
+  lcd.setCursor(0, 1);               
+  lcd.print("X:");     
+  lcd.setCursor(2,1);
+  lcd.print(registers[6]/1000);
+
+  delay(1000);          
 
   server.begin();
   recibirTrama(); 
@@ -109,19 +129,14 @@ void loop() {
 
   
   readMPU9250();
+
+
+  float temperature = readTemperature();
+  float humidity = readHumidity();
+  float pressure = readPressure();
+
+  
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 void blinkLED1() {
@@ -190,6 +205,62 @@ void blinkLED2() {
   } 
 }
 }
+float readTemperature() {
+  digitalWrite(BME_CS, LOW); // Habilitar el dispositivo
+
+  // Enviar comando de lectura de temperatura y recibir los datos correspondientes
+  SPI.transfer(0xFA); // MSB
+  uint8_t temp_msb = SPI.transfer(0);
+  SPI.transfer(0xFB); // LSB
+  uint8_t temp_lsb = SPI.transfer(0);
+
+  digitalWrite(BME_CS, HIGH); // Deshabilitar el dispositivo
+
+  // Combinar los bytes de temperatura
+  int temp_raw = (temp_msb << 8) | temp_lsb;
+  float temperature = (float)temp_raw / 248.07;
+
+  registers[4] = temperature;
+  return temperature;
+}
+
+float readHumidity() {
+  digitalWrite(BME_CS, LOW); // Habilitar el dispositivo
+
+  // Enviar comando de lectura de humedad y recibir los datos correspondientes
+  SPI.transfer(0xFD); // MSB
+  uint8_t hum_msb = SPI.transfer(0);
+  SPI.transfer(0xFE); // LSB
+  uint8_t hum_lsb = SPI.transfer(0);
+
+  digitalWrite(BME_CS, HIGH); // Deshabilitar el dispositivo
+
+  // Combinar los bytes de humedad
+  int hum_raw = (hum_msb << 8) | hum_lsb;
+  float humidity = (float)hum_raw / 1024.0;
+  registers[5] = humidity;
+  return humidity;
+}
+
+float readPressure() {
+  digitalWrite(BME_CS, LOW); // Habilitar el dispositivo
+
+  // Enviar comando de lectura de presión y recibir los datos correspondientes
+  SPI.transfer(0xF7); // MSB
+  uint8_t pres_msb = SPI.transfer(0);
+  SPI.transfer(0xF8); // LSB
+  uint8_t pres_lsb = SPI.transfer(0);
+
+  digitalWrite(BME_CS, HIGH); // Deshabilitar el dispositivo
+
+  // Combinar los bytes de presión
+  int pres_raw = ((pres_msb << 8) | pres_lsb) >> 4;
+  float pressure = (float)pres_raw / 16.0;
+
+  registers[9] = pressure;
+  return pressure;
+}
+
 
 
 void I2Cread(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data)
@@ -232,7 +303,6 @@ void readMPU9250() {
   int16_t gx = (Buf[8] << 8) | Buf[9];  // Combine high and low bytes
   int16_t gy = (Buf[10] << 8) | Buf[11];
   int16_t gz = (Buf[12] << 8) | Buf[13];
-  registers[9] = gx;
   registers[10] = gy;
   registers[11] = gz;
 }
