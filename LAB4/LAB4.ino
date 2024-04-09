@@ -284,10 +284,6 @@ void blinkLED2() {
 }
 
 
-
-
-
-
 void processModbusData(char* buffer,WiFiClient &client){
   int transactionIdentifier = (buffer[0] << 8) | buffer[1];
   int protocolIdentifier = (buffer[2] << 8) | buffer[3];

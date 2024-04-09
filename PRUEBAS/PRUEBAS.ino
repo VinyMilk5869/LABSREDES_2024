@@ -1,11 +1,23 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <SPI.h>
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27,16,2);  
+
+
+const char* LED1 = "OFF";
+const char* LED2 = "OFF";
+const int P = 22;
+const int T = 25;
+const int H = 68;
+const int X = 42;
+
 
 
 float registers[12] = {0};
-const char* ssid = "iPhonedeSara";
-const char* password = "papijuancho";
+const char* ssid = "Santiago2021";
+const char* password = "santiago2001";
 const int ledPin1 = 15;
 const int ledPin2 = 4;
 const int SSBME = 14;
@@ -47,10 +59,39 @@ void setup() {
   Serial.println("Dirección IP: ");
   Serial.println(WiFi.localIP());
   server.begin();
-
+  lcd.init();
+  lcd.backlight();
+  lcd.clear(); 
 }
 
 void loop() {
+  lcd.setCursor(0, 0);               
+  lcd.print("LED1:");     
+  lcd.setCursor(5,0);
+  lcd.print(LED1);
+  lcd.setCursor(8, 0);               
+  lcd.print("LED2:");     
+  lcd.setCursor(13,0);
+  lcd.print(LED2);
+
+  lcd.setCursor(0, 1);               
+  lcd.print("P:");     
+  lcd.setCursor(2,1);
+  lcd.print(P);
+  lcd.setCursor(4, 1);               
+  lcd.print("T:");     
+  lcd.setCursor(6,1);
+  lcd.print(T);
+  lcd.setCursor(8, 1);               
+  lcd.print("H:");     
+  lcd.setCursor(10,1);
+  lcd.print(H);
+  lcd.setCursor(12, 1);               
+  lcd.print("X:");     
+  lcd.setCursor(14,1);
+  lcd.print(X);
+  delay(500);          
+
   server.begin();
   recibirTrama(); 
   blinkLED1();
@@ -74,11 +115,13 @@ void blinkLED1() {
   // Si el valor del registro 0 es 1 y el valor del registro 2 es mayor que cero, realiza el parpadeo
   if (registers[0]==0){
     digitalWrite(ledPin1,LOW);
+    LED1= "OFF";
   }
   else{
     
     if (registers[0]==1 && registers[2]== 0) {
       digitalWrite(ledPin1,HIGH);
+      LED1= "ON ";
     }else{
       
       if (registers[0]==1 && registers[2]> 0){
@@ -106,11 +149,13 @@ void blinkLED2() {
   // Si el valor del registro 1 es 1 y el valor del registro 3 es mayor que cero, realiza el parpadeo
   if (registers[1]==0){
     digitalWrite(ledPin2,LOW);
+    LED2= "OFF";
   }
   else{
     
     if (registers[1]==1 && registers[3]== 0) {
       digitalWrite(ledPin2,HIGH);
+      LED2= "ON ";
     }else{
       
       if (registers[1]==1 && registers[3]> 0){
