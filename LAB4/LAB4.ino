@@ -3,8 +3,8 @@
 #include <SPI.h>
 
 float registers[12] = {0};
-const char* ssid = "iPhonedeSara";
-const char* password = "papijuancho";
+const char* ssid = "JUANSI";
+const char* password = "allejo69";
 const int ledPin1 = 15;
 const int ledPin2 = 4;
 const int SSBME = 14;
