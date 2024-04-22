@@ -1,25 +1,12 @@
 #include <Wire.h>
 #include <WiFi.h>
-#include <SPI.h>
-#include <LiquidCrystal_I2C.h>
-#include <SPI.h>
-
-LiquidCrystal_I2C lcd(0x27,16,2);  
-
-
-const char* LED1 = "OFF";
-const char* LED2 = "OFF";
-
-
 
 float registers[12] = {0};
-const char* ssid = "Santiago2021";
-const char* password = "santiago2001";
-const int ledPin1 = 15;
-const int ledPin2 = 4;
-const int SSBME = 14;
-const int SSMPU = 13;
-const int pulsador= 27;
+const char* ssid = "PipilinWifi";
+const char* password = "pipe2207";
+const int ledPin1 = 23;
+const int ledPin2 = 19;
+const int pulsador=27;
 WiFiServer server(502);
 unsigned long previousMillis[2] = {0,0};
 const uint8_t Direccion_S1 = 0x40;
@@ -34,22 +21,55 @@ unsigned long previousMillis1 = 0;
 unsigned long previousMillis2 = 0;
 int buttonPressCount =0;
 
-#define BME_SCK 18   
-#define BME_MISO 19  
-#define BME_MOSI 23  
-#define BME_CS 5     
-
+int16_t Temperatura, Humedad;
+int16_t accelX, accelY, accelZ;
+int16_t giroX, giroY, giroZ;
 #define    MPU9250_ADDRESS            0x68
 
-#define    BME_280_ADDRESS            0x76
+#define    MAG_ADDRESS                0x0C
+
+
+#define    GYRO_FULL_SCALE_250_DPS    0x00  
+
+#define    GYRO_FULL_SCALE_500_DPS    0x08
+
+#define    GYRO_FULL_SCALE_1000_DPS   0x10
 
 #define    GYRO_FULL_SCALE_2000_DPS   0x18
 
 
+#define    ACC_FULL_SCALE_2_G        0x00  
+
+#define    ACC_FULL_SCALE_4_G        0x08
+
+#define    ACC_FULL_SCALE_8_G        0x10
+
+#define    ACC_FULL_SCALE_16_G       0x18
+
+//Funcion auxiliar lectura
+void I2Cread(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data)
+{
+  Wire.beginTransmission(Address);
+  Wire.write(Register);
+  Wire.endTransmission();
+
+  Wire.requestFrom(Address, Nbytes);
+  uint8_t index = 0;
+  while (Wire.available())
+    Data[index++] = Wire.read();
+}
+
+// Funcion auxiliar de escritura
+void I2CwriteByte(uint8_t Address, uint8_t Register, uint8_t Data)
+{
+  Wire.beginTransmission(Address);
+  Wire.write(Register);
+  Wire.write(Data);
+  Wire.endTransmission();
+}
 void setup() {
   pinMode(ledPin1, OUTPUT);
   pinMode(ledPin2, OUTPUT);
-
   Serial.begin(9600);
   Serial.print("Conectando a ");
   Serial.println(ssid);
@@ -66,87 +86,147 @@ void setup() {
   Serial.println("Dirección IP: ");
   Serial.println(WiFi.localIP());
   server.begin();
-
   Wire.begin();
+  // Configurar acelerometro
+  I2CwriteByte(MPU9250_ADDRESS, 28, ACC_FULL_SCALE_16_G);
+  // Configurar giroscopio
   I2CwriteByte(MPU9250_ADDRESS, 27, GYRO_FULL_SCALE_2000_DPS);
-
-  SPI.begin(); // Inicializar SPI
-  pinMode(BME_CS, OUTPUT);
-  digitalWrite(BME_CS, HIGH);
-
-  lcd.init();
-  lcd.backlight();
-  lcd.clear(); 
+  setupSI7021();
 }
 
 void loop() {
-  lcd.setCursor(0, 0);               
-  lcd.print("L1:");     
-  lcd.setCursor(3,0);
-  lcd.print(int(registers[0]));
-  
-  // lcd.setCursor(5, 0);               
-  // lcd.print("L2:");     
-  // lcd.setCursor(8,0);
-  // lcd.print(int(registers[1]));
-
-  lcd.setCursor(10, 0);               
-  lcd.print("P:");     
-  lcd.setCursor(12,0);
-  lcd.print(int(registers[9]));
-
-
-  lcd.setCursor(12, 1);              
-  lcd.print("T:");  
-  lcd.setCursor(14,1);
-  lcd.print(int(registers[4]));
-
-  lcd.setCursor(5, 0);               
-  lcd.print("SPI:");     
-  lcd.setCursor(7,0);
-  lcd.print(int(registers[5]));
-             
-  lcd.setCursor(6, 1);   
-  lcd.print("Y:");        
-  lcd.setCursor(8,1);
-  lcd.print(int(registers[7]));
-  
-  lcd.setCursor(0, 1);               
-  lcd.print("I2C:");     
-  lcd.setCursor(2,1);
-  lcd.print(registers[6]/1000);
-
-  delay(1000);          
-
   server.begin();
-  recibirTrama(); 
-  
+  static bool ledState1 = LOW;
+  static bool ledState2 = LOW;
+  static unsigned long previousMillis1 = 0;
+  static unsigned long previousMillis2 = 0;
   blinkLED1();
   blinkLED2();
-
+  updateButtonPressCount();
   
+//  blinkLED(registers[0], ledPin1, 500, false, ledState1, previousMillis1); // Para el primer LED
+//  blinkLED(registers[1], ledPin2, 500, false, ledState2, previousMillis2); // Para el segundo LED
+  Serial.println("Sensor 2 (MPU9250): ");
+  Serial.println("Acelerómetro (mg): ");
+  Serial.print("X: ");
+  Serial.print(registers[6]);
+  Serial.print(",");
+  Serial.print("Y: ");
+  Serial.print(registers[7]);
+  Serial.print(",");
+  Serial.print("Z: ");
+  Serial.println(registers[8]);
+
+
+  Serial.println("Giroscopio (grados/s): ");
+  Serial.print("X: ");
+  Serial.print(registers[9]);
+  Serial.print(",");
+  Serial.print("Y: ");
+  Serial.print(registers[10]);
+  Serial.print(",");
+  Serial.print("Z: ");
+  Serial.println(registers[11]);
+  Serial.println();
+  //delay(3000);
+  readSI7021();
   readMPU9250();
-
-
-  float temperature = readTemperature();
-  float humidity = readHumidity();
-  float pressure = readPressure();
-
-  
+  recibirTrama(); 
 }
 
 
+void setupSI7021() {}
+void updateButtonPressCount() {
+  // Leer el estado del botón y actualizar el registro correspondiente
+  if (digitalRead(pulsador) == HIGH) {
+    buttonPressCount++;
+    // Puedes agregar lógica aquí para reiniciar el contador si es necesario
+  }
+  registers[12] = buttonPressCount; // Almacenar la cantidad de veces que se ha pulsado el botón en el registro 12
+}
+void readSI7021() {
+  Wire.beginTransmission(Direccion_S1);
+  Wire.write(0xE3);
+  Wire.endTransmission();
+  delay(50);
+  Wire.requestFrom((uint8_t)Direccion_S1, (uint8_t)2);
+ 
+  Temperatura = ((Wire.read() << 8) | Wire.read()) * 175.72 / 65536 - 46.85;
+  registers[4] = Temperatura;
+  Wire.beginTransmission(Direccion_S1);
+  Wire.write(0xE5);
+  Wire.endTransmission();
+  delay(50);
+  Wire.requestFrom((uint8_t)Direccion_S1, (uint8_t)2);
+  Humedad = ((Wire.read() << 8) | Wire.read()) * 125.0 / 65536 - 6;
+  registers[5] = Humedad;
+}
+
+//void readMPU9250() {
+//  uint8_t Buf[14];
+//  Wire.beginTransmission(Direccion_S2);
+//  Wire.write(Acelerometro_Out);
+//  Wire.endTransmission(false);
+//  Wire.requestFrom((uint8_t)Direccion_S2, (uint8_t)6, true);
+//  uint8_t index = 0;
+//  while (Wire.available()){
+//    Buf[index++] = Wire.read();}
+//  int16_t ax = -(Buf[0] << 8 | Buf[1]);
+//  int16_t ay = -(Buf[2] << 8 | Buf[3]);
+//  int16_t az = Buf[4] << 8 | Buf[5];
+//  //accelX = (Wire.read() << 8) | Wire.read();
+//  //accelY = (Wire.read() << 8) | Wire.read();
+//  //accelZ = (Wire.read() << 8) | Wire.read();
+//  registers[6] = ax;
+//  registers[7] = ay;
+//  registers[8] = az;
+//  int16_t gx = -(Buf[8] << 8 | Buf[9]);
+//  int16_t gy = -(Buf[10] << 8 | Buf[11]);
+//  int16_t gz = Buf[12] << 8 | Buf[13];
+////  Wire.beginTransmission(Direccion_S2);
+////  Wire.write(Giroscopio_Out);
+////  Wire.endTransmission(false);
+////  Wire.requestFrom((uint8_t)Direccion_S2, (uint8_t)6, true);
+////  giroX = (Wire.read() << 8) | Wire.read();
+////  giroY = (Wire.read() << 8) | Wire.read();
+//////  giroZ = (Wire.read() << 8) | Wire.read();
+//  registers[9] = gz;
+//  registers[10] =gy;
+//  registers[11] = gz;
+//}
+void readMPU9250() {
+  uint8_t Buf[14];
+  Wire.beginTransmission(Direccion_S2);
+  Wire.write(Acelerometro_Out);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)Direccion_S2, (uint8_t)14, true); // Request all 14 bytes
+  for (int i = 0; i < 14; i++) {
+    Buf[i] = Wire.read();
+  }
+  int16_t ax = (Buf[0] << 8) | Buf[1];  // Combine high and low bytes
+  int16_t ay = (Buf[2] << 8) | Buf[3];
+  int16_t az = (Buf[4] << 8) | Buf[5];
+  registers[6] = ax;
+  registers[7] = ay;
+  registers[8] = az;
+  int16_t gx = (Buf[8] << 8) | Buf[9];  // Combine high and low bytes
+  int16_t gy = (Buf[10] << 8) | Buf[11];
+  int16_t gz = (Buf[12] << 8) | Buf[13];
+  registers[9] = gx;
+  registers[10] = gy;
+  registers[11] = gz;
+}
+
+ 
 void blinkLED1() {
-  // Si el valor del registro 0 es 1 y el valor del registro 2 es mayor que cero, realiza el parpadeo
+  // Si el valor del registro 1 es 1 y el valor del registro 3 es mayor que cero, realiza el parpadeo
   if (registers[0]==0){
     digitalWrite(ledPin1,LOW);
-    LED1= "OFF";
   }
   else{
     
     if (registers[0]==1 && registers[2]== 0) {
       digitalWrite(ledPin1,HIGH);
-      LED1= "ON ";
     }else{
       
       if (registers[0]==1 && registers[2]> 0){
@@ -162,25 +242,22 @@ void blinkLED1() {
         } else {
           digitalWrite(ledPin1, LOW);
           ledState1 = LOW;
-          }
         }
       }
-    } 
-  }
-}
+    }
+  } 
+}}
 
 
 void blinkLED2() {
   // Si el valor del registro 1 es 1 y el valor del registro 3 es mayor que cero, realiza el parpadeo
   if (registers[1]==0){
     digitalWrite(ledPin2,LOW);
-    LED2= "OFF";
   }
   else{
     
     if (registers[1]==1 && registers[3]== 0) {
       digitalWrite(ledPin2,HIGH);
-      LED2= "ON ";
     }else{
       
       if (registers[1]==1 && registers[3]> 0){
@@ -202,107 +279,9 @@ void blinkLED2() {
   } 
 }
 }
-float readTemperature() {
-  digitalWrite(BME_CS, LOW); // Habilitar el dispositivo
-
-  // Enviar comando de lectura de temperatura y recibir los datos correspondientes
-  SPI.transfer(0xFA); // MSB
-  uint8_t temp_msb = SPI.transfer(0);
-  SPI.transfer(0xFB); // LSB
-  uint8_t temp_lsb = SPI.transfer(0);
-
-  digitalWrite(BME_CS, HIGH); // Deshabilitar el dispositivo
-
-  // Combinar los bytes de temperatura
-  int temp_raw = (temp_msb << 8) | temp_lsb;
-  float temperature = (float)temp_raw / 248.07;
-
-  registers[4] = temperature;
-  return temperature;
-}
-
-float readHumidity() {
-  digitalWrite(BME_CS, LOW); // Habilitar el dispositivo
-
-  // Enviar comando de lectura de humedad y recibir los datos correspondientes
-  SPI.transfer(0xFD); // MSB
-  uint8_t hum_msb = SPI.transfer(0);
-  SPI.transfer(0xFE); // LSB
-  uint8_t hum_lsb = SPI.transfer(0);
-
-  digitalWrite(BME_CS, HIGH); // Deshabilitar el dispositivo
-
-  // Combinar los bytes de humedad
-  int hum_raw = (hum_msb << 8) | hum_lsb;
-  float humidity = (float)hum_raw / 1024.0;
-  registers[5] = humidity;
-  return humidity;
-}
-
-float readPressure() {
-  digitalWrite(BME_CS, LOW); // Habilitar el dispositivo
-
-  // Enviar comando de lectura de presión y recibir los datos correspondientes
-  SPI.transfer(0xF7); // MSB
-  uint8_t pres_msb = SPI.transfer(0);
-  SPI.transfer(0xF8); // LSB
-  uint8_t pres_lsb = SPI.transfer(0);
-
-  digitalWrite(BME_CS, HIGH); // Deshabilitar el dispositivo
-
-  // Combinar los bytes de presión
-  int pres_raw = ((pres_msb << 8) | pres_lsb) >> 4;
-  float pressure = (float)pres_raw / 16.0;
-
-  registers[9] = pressure;
-  return pressure;
-}
 
 
 
-void I2Cread(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data)
-{
-  Wire.beginTransmission(Address);
-  Wire.write(Register);
-  Wire.endTransmission();
-
-  Wire.requestFrom(Address, Nbytes);
-  uint8_t index = 0;
-  while (Wire.available())
-    Data[index++] = Wire.read();
-}
-
-
-void I2CwriteByte(uint8_t Address, uint8_t Register, uint8_t Data)
-{
-  Wire.beginTransmission(Address);
-  Wire.write(Register);
-  Wire.write(Data);
-  Wire.endTransmission();
-}
-
-
-void readMPU9250() {
-  uint8_t Buf[14];
-  Wire.beginTransmission(Direccion_S2);
-  Wire.write(Acelerometro_Out);
-  Wire.endTransmission(false);
-  Wire.requestFrom((uint8_t)Direccion_S2, (uint8_t)14, true); // Request all 14 bytes
-  for (int i = 0; i < 14; i++) {
-    Buf[i] = Wire.read();
-  }
-  int16_t ax = (Buf[0] << 8) | Buf[1];  // Combine high and low bytes
-  int16_t ay = (Buf[2] << 8) | Buf[3];
-  int16_t az = (Buf[4] << 8) | Buf[5];
-  registers[6] = ax;
-  registers[7] = ay;
-  registers[8] = az;
-  int16_t gx = (Buf[8] << 8) | Buf[9];  // Combine high and low bytes
-  int16_t gy = (Buf[10] << 8) | Buf[11];
-  int16_t gz = (Buf[12] << 8) | Buf[13];
-  registers[10] = gy;
-  registers[11] = gz;
-}
 
 
 
