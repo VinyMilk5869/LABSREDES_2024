@@ -2,48 +2,41 @@
 #include <WiFi.h>
 #include <LiquidCrystal_I2C.h>
 #include <SPI.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+ 
+
+uint8_t batteryLevel = 100; 
+BLEServer *pServer = nullptr;
+BLECharacteristic *pBatteryLevelCharacteristic = nullptr; // Declarar globalmente
+
 
 float registers[13] = {0}; // Se incrementa el tamaño del array para incluir el registro adicional para contar los pulsos del botón
-const char* ssid = "Santiago2021";
-const char* password = "santiago2001";
-const int ledPin1 = 15;
-const int ledPin2 = 4;
+const char* ssid = "iPhonedeSara";
+const char* password = "papijuancho";
+const int LED_PIN1 = 15;
+const int LED_PIN2 = 4;
 
-const int pulsador = 13;
 WiFiServer server(502);
-unsigned long previousMillis[2] = {0, 0};
 
 const uint8_t Direccion_S1 = 0x40;
 const uint8_t Direccion_S2 = 0x68;
 const uint8_t Acelerometro = 0x1C;
-const uint8_t Giroscopio = 0x1B;
+// const uint8_t Giroscopio = 0x1B;
 const uint8_t Acelerometro_Out = 0x3B;
-const uint8_t Giroscopio_Out = 0x43;
+// const uint8_t Giroscopio_Out = 0x43;
 
 bool ledState1 = LOW;
 bool ledState2 = LOW;
-unsigned long previousMillis1 = 0;
-unsigned long previousMillis2 = 0;
-int buttonPressCount = 0;
 
 int16_t Temperatura, Humedad;
 int16_t accelX, accelY, accelZ;
-int16_t giroX, giroY, giroZ;
+// int16_t giroX, giroY, giroZ;
 
-#define MPU9250_ADDRESS 0x68
-#define MAG_ADDRESS 0x0C
-#define GYRO_FULL_SCALE_250_DPS 0x00
-#define GYRO_FULL_SCALE_500_DPS 0x08
-#define GYRO_FULL_SCALE_1000_DPS 0x10
-#define GYRO_FULL_SCALE_2000_DPS 0x18
-#define ACC_FULL_SCALE_2_G 0x00
-#define ACC_FULL_SCALE_4_G 0x08
-#define ACC_FULL_SCALE_8_G 0x10
-#define ACC_FULL_SCALE_16_G 0x18
 // Registros de configuración del MPU9250
-#define WHO_AM_I 0x75
 #define ACCEL_XOUT_H 0x3B
-#define GYRO_XOUT_H 0x43
+// #define GYRO_XOUT_H 0x43
 #define LCD_ADDRESS 0x27
 
 #define MPU_CS_PIN 5 // Pin de chip select para el MPU9250
@@ -52,21 +45,55 @@ int16_t giroX, giroY, giroZ;
 #define MISO_PIN 19  // Pin MISO de SPI
 
 LiquidCrystal_I2C lcd(LCD_ADDRESS, 16, 2);
-// Variable de estado para controlar qué información se muestra en la pantalla LCD
 enum LCDState {
   TEMPERATURE_HUMIDITY,
   ACCELERATION_GYROSCOPE
 };
 LCDState lcdState = TEMPERATURE_HUMIDITY;
 
-unsigned long lastStateChangeTime = 0;
-const unsigned long stateChangeInterval = 5000; // 3 segundos
+unsigned int lastStateChangeTime = 0;
+const unsigned int stateChangeInterval = 5000; // 3 segundos
 
 SPIClass spi(HSPI); // Declaración del bus SPI
 
+// Registro de frecuencia para LEDs
+volatile int freqLed1 = 0;
+volatile int freqLed2 = 0;
+volatile bool enableLed1;
+volatile bool enableLed2;
+ 
+// Prototipos de funciones
+void blinkLed1(void *parameter);
+void blinkLed2(void *parameter);
+
+
 void setup() {
-  pinMode(ledPin1, OUTPUT);
-  pinMode(ledPin2, OUTPUT);
+  pinMode(LED_PIN1, OUTPUT);
+  pinMode(LED_PIN2, OUTPUT);
+
+  xTaskCreate(blinkLed1, "Blink LED 1", 1000, NULL, 1, NULL);
+  xTaskCreate(blinkLed2, "Blink LED 2", 1000, NULL, 1, NULL);
+
+
+  BLEDevice::init("FARAONLOVESHADYXXX");
+  pServer = BLEDevice::createServer();
+ 
+  // Crear un servicio de batería
+  BLEService *pBatteryService = pServer->createService("180F");
+  pBatteryLevelCharacteristic = pBatteryService->createCharacteristic(
+                                                     "2A19",
+                                                     BLECharacteristic::PROPERTY_READ |
+                                                     BLECharacteristic::PROPERTY_NOTIFY
+                                                   );
+ 
+  batteryLevel = 100; // Nivel de batería inicial
+  pBatteryLevelCharacteristic->setValue(&batteryLevel, 1);
+  pBatteryService->start();
+ 
+  // Iniciar publicidad del servidor BLE
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(pBatteryService->getUUID());
+  pAdvertising->start();
 
   Serial.begin(9600);
   Serial.print("Conectando a ");
@@ -78,11 +105,6 @@ void setup() {
   SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, MPU_CS_PIN);
   delay(100);
   
-  // Verificar la conexión con el MPU9250
-  // if (readRegister(WHO_AM_I) != 0x71) { // El valor esperado para el MPU9250 es 0x71
-  //   Serial.println("Error al conectar con el MPU9250");
-  //   while(1);
-  // }
   Serial.println("MPU9250 conectado correctamente");
   WiFi.begin(ssid, password);
 
@@ -106,13 +128,15 @@ void setup() {
 
 void loop() {
   int16_t ax, ay, az; // Aceleración en ejes X, Y y Z
-  int16_t gx, gy, gz; // Velocidad angular en ejes X, Y y Z
+  // int16_t gx, gy, gz; // Velocidad angular en ejes X, Y y Z
 
   server.begin();
-  blinkLED1();
-  blinkLED2();
+  enableLed1 = registers[0];
+  enableLed2 = registers[1];
+  freqLed1 = registers[2];  // Asumiendo que la frecuencia del LED 1 está en el registro 3
+  freqLed2 = registers[3];  // Asumiendo que la frecuencia del LED 2 está en el registro 4
   readAccelData(ax, ay, az);
-  readGyroData(gx, gy, gz);
+  // readGyroData(gx, gy, gz);
 
   readSI7021();
   //readMPU9250();
@@ -136,6 +160,8 @@ void loop() {
   updateLCD();
   delay(100);
   recibirTrama();
+  batteryLevel--;
+  pBatteryLevelCharacteristic->setValue(&batteryLevel, sizeof(batteryLevel));
 }
 
 void setupSI7021() {
@@ -201,33 +227,6 @@ void readSI7021() {
   registers[5] = Humedad;
 }
 
-//void readMPU9250() {
-//  uint8_t Buf[14];
-//  
-//  digitalWrite(MPU9250_SS, LOW); // Activa el esclavo MPU9250
-//  spi.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0)); // Configura la transferencia SPI
-//  
-//  spi.transfer(ACCEL_XOUT_H | 0x80); // Indica que queremos leer a partir de la dirección de salida del acelerómetro
-//  for (int i = 0; i < 14; i++) {
-//    Buf[i] = spi.transfer(0x00); // Realiza la transferencia y guarda los datos en el buffer
-//  }
-//
-//  spi.endTransaction(); // Termina la transferencia SPI
-//  digitalWrite(MPU9250_SS, HIGH); // Desactiva el esclavo MPU9250
-//
-//  int16_t ax = (Buf[0] << 8) | Buf[1];
-//  int16_t ay = (Buf[2] << 8) | Buf[3];
-//  int16_t az = (Buf[4] << 8) | Buf[5];
-//  registers[6] = ax;
-//  registers[7] = ay;
-//  registers[8] = az;
-//  int16_t gx = (Buf[8] << 8) | Buf[9];
-//  int16_t gy = (Buf[10] << 8) | Buf[11];
-//  int16_t gz = (Buf[12] << 8) | Buf[13];
-//  registers[9] = gx;
-//  registers[10] = gy;
-//  registers[11] = gz;
-//}
 void selectChip() {
   digitalWrite(MPU_CS_PIN, LOW); // Habilitar el MPU9250
 }
@@ -258,63 +257,44 @@ void readAccelData(int16_t &ax, int16_t &ay, int16_t &az) {
   
 }
 
-void readGyroData(int16_t &gx, int16_t &gy, int16_t &gz) {
-  selectChip();
-  SPI.transfer(GYRO_XOUT_H | 0x80); // Establecer el bit MSB para indicar una lectura
-  gx = (SPI.transfer16(0) << 8) >> 8; // Leer datos de giroscopio en el eje X
-  gy = (SPI.transfer16(0) << 8) >> 8; // Leer datos de giroscopio en el eje Y
-  gz = (SPI.transfer16(0) << 8) >> 8; // Leer datos de giroscopio en el eje Z
-  registers[9] = gx;
-  registers[10] = gy;
-  registers[11] = gz;
-  deselectChip();
+// void readGyroData(int16_t &gx, int16_t &gy, int16_t &gz) {
+//   selectChip();
+//   SPI.transfer(GYRO_XOUT_H | 0x80); // Establecer el bit MSB para indicar una lectura
+//   gx = (SPI.transfer16(0) << 8) >> 8; // Leer datos de giroscopio en el eje X
+//   gy = (SPI.transfer16(0) << 8) >> 8; // Leer datos de giroscopio en el eje Y
+//   gz = (SPI.transfer16(0) << 8) >> 8; // Leer datos de giroscopio en el eje Z
+//   registers[9] = gx;
+//   registers[10] = gy;
+//   registers[11] = gz;
+//   deselectChip();
 
-}
+// }
 
-void blinkLED1() {
-  if (registers[0] == 0) {
-    digitalWrite(ledPin1, LOW);
-  } else {
-    if (registers[0] == 1 && registers[2] == 0) {
-      digitalWrite(ledPin1, HIGH);
+void blinkLed1(void *parameter) {
+  while (1) {
+ 
+    if (enableLed1 && freqLed1 > 0) {
+      digitalWrite(LED_PIN1, HIGH);
+      vTaskDelay(pdMS_TO_TICKS(500 / freqLed1));
+      digitalWrite(LED_PIN1, LOW);
+      vTaskDelay(pdMS_TO_TICKS(500 / freqLed1));
     } else {
-      if (registers[0] == 1 && registers[2] > 0) {
-        unsigned long currentMillis = millis();
-        if (currentMillis - previousMillis1 >= registers[2]) {
-          previousMillis1 = currentMillis;
-          if (ledState1 == LOW) {
-            digitalWrite(ledPin1, HIGH);
-            ledState1 = HIGH;
-          } else {
-            digitalWrite(ledPin1, LOW);
-            ledState1 = LOW;
-          }
-        }
-      }
+      digitalWrite(LED_PIN1, LOW);
+      vTaskDelay(pdMS_TO_TICKS(100));
     }
   }
 }
-
-void blinkLED2() {
-  if (registers[1] == 0) {
-    digitalWrite(ledPin2, LOW);
-  } else {
-    if (registers[1] == 1 && registers[3] == 0) {
-      digitalWrite(ledPin2, HIGH);
+ 
+void blinkLed2(void *parameter) {
+  while (1) {
+    if (enableLed2 && freqLed2 > 0) {
+      digitalWrite(LED_PIN2, HIGH);
+      vTaskDelay(pdMS_TO_TICKS(500 / freqLed2));
+      digitalWrite(LED_PIN2, LOW);
+      vTaskDelay(pdMS_TO_TICKS(500 / freqLed2));
     } else {
-      if (registers[1] == 1 && registers[3] > 0) {
-        unsigned long currentMillis = millis();
-        if (currentMillis - previousMillis2 >= registers[3]) {
-          previousMillis2 = currentMillis;
-          if (ledState2 == LOW) {
-            digitalWrite(ledPin2, HIGH);
-            ledState2 = HIGH;
-          } else {
-            digitalWrite(ledPin2, LOW);
-            ledState2 = LOW;
-          }
-        }
-      }
+      digitalWrite(LED_PIN2, LOW);
+      vTaskDelay(pdMS_TO_TICKS(100));
     }
   }
 }

@@ -1,9 +1,4 @@
-#include <Wire.h>
-#include <WiFi.h>
-#include <SPI.h>
 #include <LiquidCrystal_I2C.h>
-#include <SPI.h>
-
 LiquidCrystal_I2C lcd(0x27,16,2);  
 
 
@@ -46,36 +41,11 @@ int buttonPressCount =0;
  
 
 void setup() {
-  pinMode(ledPin1, OUTPUT);
-  pinMode(ledPin2, OUTPUT);
-
   Serial.begin(9600);
-  Serial.print("Conectando a ");
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("");
-  Serial.println("Conectado a la red WiFi");
-  Serial.println("Dirección IP: ");
-  Serial.println(WiFi.localIP());
-  server.begin();
-
-  Wire.begin();
-  I2CwriteByte(MPU9250_ADDRESS, 27, GYRO_FULL_SCALE_2000_DPS);
-
   SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_CS); // Inicializar SPI
   pinMode(PIN_CS, OUTPUT);
   digitalWrite(PIN_CS, HIGH); // Desactivar el chip select inicialmente
 
-  lcd.init();
-  lcd.backlight();
-  lcd.clear(); 
 }
 
 void loop() {

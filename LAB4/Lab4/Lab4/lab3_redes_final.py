@@ -1,7 +1,7 @@
 import socket
 
 # Dirección IP y puerto del servidor Modbus
-SERVER_IP = '192.168.228.3'  # Cambia por la dirección IP del ESP32
+SERVER_IP = '192.168.164.211'  # Cambia por la dirección IP del ESP32
 SERVER_PORT = 502
 
 def entero_a_bytes1(numero):
